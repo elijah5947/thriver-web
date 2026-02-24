@@ -31,7 +31,7 @@ export default function OnboardingPage() {
         .eq("id", data.session.user.id)
         .maybeSingle();
 
-      if (prof?.username) router.replace("/");
+      if (prof?.username) router.replace("/feed");
     })();
   }, [router]);
 
@@ -57,7 +57,7 @@ export default function OnboardingPage() {
 
     if (error) {
       // unique violation shows as 23505 typically
-      if (error.message.toLowerCase().includes("duplicate")) {
+      if (String(error.code) === "23505" || error.message.toLowerCase().includes("duplicate")) {
         setStatus("That username is taken.");
       } else {
         setStatus("Error: " + error.message);
@@ -65,12 +65,12 @@ export default function OnboardingPage() {
       return;
     }
 
-    router.replace("/");
+    router.replace("/feed");
   }
 
   return (
     <main style={{ padding: 24, maxWidth: 520 }}>
-      <h1 style={{ fontSize: 24, fontWeight: 700 }}>Choose a username</h1>
+      <h1 style={{ fontSize: 24, fontWeight: 800 }}>Choose a username</h1>
       <p style={{ marginTop: 8, opacity: 0.8 }}>
         Username/anon for now. You can change this later.
       </p>
@@ -83,19 +83,22 @@ export default function OnboardingPage() {
           style={{
             width: "100%",
             padding: 12,
-            border: "1px solid #ddd",
-            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.14)",
+            borderRadius: 12,
+            background: "rgba(0,0,0,0.20)",
+            color: "white",
+            outline: "none",
           }}
         />
         <button
           disabled={loading}
+          className="th-btn th-accent"
           style={{
             marginTop: 12,
             width: "100%",
             padding: 12,
-            borderRadius: 10,
-            border: "1px solid #ddd",
-            fontWeight: 600,
+            borderRadius: 12,
+            fontWeight: 1000,
           }}
         >
           {loading ? "Creating…" : "Continue"}

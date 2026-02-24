@@ -3,97 +3,112 @@
 import { useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
-type Mode = "signin" | "signup" | "reset";
+type Mode = "signin" | "signup";
+
+function isValidUsername(u: string) {
+  return /^[a-z0-9_]{3,20}$/.test(u);
+}
+
+// We use a synthetic email behind the scenes so Supabase Auth works
+// without ever asking the user for an email.
+function usernameToEmail(username: string) {
+  return `${username}@thriver.local`;
+}
 
 export default function LoginPage() {
   const [mode, setMode] = useState<Mode>("signin");
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
 
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string>("");
 
-  const emailOk = useMemo(() => /\S+@\S+\.\S+/.test(email.trim()), [email]);
+  const u = useMemo(() => username.trim().toLowerCase(), [username]);
+  const usernameOk = useMemo(() => isValidUsername(u), [u]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setStatus("");
 
-    const e2 = email.trim().toLowerCase();
-    if (!emailOk) {
-      setStatus("Enter a valid email.");
+    if (!usernameOk) {
+      setStatus("Username must be 3–20 chars: a-z, 0-9, underscore.");
       return;
     }
-
-    if (mode !== "reset" && password.length < 6) {
+    if (password.length < 6) {
       setStatus("Password must be at least 6 characters.");
       return;
     }
 
     setBusy(true);
     try {
+      const email = usernameToEmail(u);
+
       if (mode === "signin") {
-        const { error } = await supabase.auth.signInWithPassword({
-          email: e2,
-          password,
-        });
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) {
           setStatus(error.message);
           return;
         }
-        setStatus("Signed in ✅");
-        // Most apps route to feed
         window.location.href = "/feed";
         return;
       }
 
-      if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({
-          email: e2,
-          password,
-          // If you enable email confirmation in Supabase, this helps direct users back.
-          options: { emailRedirectTo: `${window.location.origin}/feed` },
-        });
-        if (error) {
-          setStatus(error.message);
-          return;
-        }
-        // Depending on your Supabase settings, user may be signed in immediately or need to confirm.
-        setStatus("Account created ✅ (If email confirmation is on, check your inbox.)");
-        window.location.href = "/feed";
+      // signup
+      // 1) Check username availability first
+      const { data: exists, error: existsErr } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("username", u)
+        .maybeSingle();
+
+      if (existsErr) {
+        setStatus("Error checking username: " + existsErr.message);
+        return;
+      }
+      if (exists) {
+        setStatus("That username is taken.");
         return;
       }
 
-      // reset password
-      const { error } = await supabase.auth.resetPasswordForEmail(e2, {
-        redirectTo: `${window.location.origin}/reset`,
+      // 2) Create Supabase Auth user using synthetic email
+      const { data: sign, error: signErr } = await supabase.auth.signUp({
+        email,
+        password,
       });
-      if (error) {
-        setStatus(error.message);
+
+      if (signErr) {
+        setStatus(signErr.message);
         return;
       }
-      setStatus("Password reset email sent ✅");
+
+      const userId = sign.user?.id;
+      if (!userId) {
+        setStatus("Signup succeeded but no user returned. If email confirmation is ON, turn it OFF for now.");
+        return;
+      }
+
+      // 3) Create profile row
+      const { error: profErr } = await supabase.from("profiles").insert({
+        id: userId,
+        username: u,
+      });
+
+      if (profErr) {
+        // If profile insert fails, sign out so the user isn't stuck half-created.
+        await supabase.auth.signOut();
+        setStatus("Could not create profile: " + profErr.message);
+        return;
+      }
+
+      window.location.href = "/feed";
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <main
-      className="th-screen"
-      style={{
-        display: "grid",
-        placeItems: "center",
-        padding: 18,
-      }}
-    >
-      <div
-        className="th-card"
-        style={{
-          width: "min(520px, 100%)",
-          padding: 18,
-        }}
-      >
+    <main className="th-screen" style={{ display: "grid", placeItems: "center", padding: 18 }}>
+      <div className="th-card" style={{ width: "min(520px, 100%)", padding: 18 }}>
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
           <div style={{ fontSize: 22, fontWeight: 1000, letterSpacing: 0.2 }}>
             Thriver<span style={{ color: "var(--accent)" }}>.</span>
@@ -124,18 +139,42 @@ export default function LoginPage() {
         </div>
 
         <div className="th-muted" style={{ marginTop: 8 }}>
-          {mode === "signin" ? "Welcome back." : mode === "signup" ? "Create your account." : "Reset your password."}
+          {mode === "signin" ? "Welcome back." : "Create your account."}
         </div>
 
         <form onSubmit={onSubmit} style={{ marginTop: 16, display: "grid", gap: 12 }}>
           <label style={{ display: "grid", gap: 6 }}>
-            <div style={{ fontWeight: 900 }}>Email</div>
+            <div style={{ fontWeight: 900 }}>Username</div>
             <input
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              inputMode="email"
-              autoComplete="email"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="e.g. thriver_king"
+              autoComplete="username"
+              className="th-input"
+              style={{
+                padding: "12px 12px",
+                borderRadius: 12,
+                border: "1px solid rgba(255,255,255,0.12)",
+                background: "rgba(0,0,0,0.25)",
+                color: "white",
+                outline: "none",
+              }}
+            />
+            {!usernameOk && username.trim().length > 0 && (
+              <div className="th-muted" style={{ fontSize: 12 }}>
+                Use 3–20 chars: a-z, 0-9, underscore.
+              </div>
+            )}
+          </label>
+
+          <label style={{ display: "grid", gap: 6 }}>
+            <div style={{ fontWeight: 900 }}>Password</div>
+            <input
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              type="password"
+              autoComplete={mode === "signup" ? "new-password" : "current-password"}
               className="th-input"
               style={{
                 padding: "12px 12px",
@@ -148,69 +187,13 @@ export default function LoginPage() {
             />
           </label>
 
-          {mode !== "reset" && (
-            <label style={{ display: "grid", gap: 6 }}>
-              <div style={{ fontWeight: 900 }}>Password</div>
-              <input
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                type="password"
-                autoComplete={mode === "signup" ? "new-password" : "current-password"}
-                className="th-input"
-                style={{
-                  padding: "12px 12px",
-                  borderRadius: 12,
-                  border: "1px solid rgba(255,255,255,0.12)",
-                  background: "rgba(0,0,0,0.25)",
-                  color: "white",
-                  outline: "none",
-                }}
-              />
-            </label>
-          )}
-
           <button
             className="th-btn th-accent"
             disabled={busy}
             style={{ marginTop: 4, padding: "12px 14px", borderRadius: 12, fontWeight: 1000 }}
           >
-            {busy
-              ? "Working…"
-              : mode === "signin"
-              ? "Sign in"
-              : mode === "signup"
-              ? "Create account"
-              : "Send reset email"}
+            {busy ? "Working…" : mode === "signin" ? "Sign in" : "Create account"}
           </button>
-
-          {mode !== "reset" && (
-            <button
-              type="button"
-              className="th-btn"
-              style={{ padding: "10px 14px", borderRadius: 12 }}
-              onClick={() => {
-                setMode("reset");
-                setStatus("");
-              }}
-            >
-              Forgot password?
-            </button>
-          )}
-
-          {mode === "reset" && (
-            <button
-              type="button"
-              className="th-btn"
-              style={{ padding: "10px 14px", borderRadius: 12 }}
-              onClick={() => {
-                setMode("signin");
-                setStatus("");
-              }}
-            >
-              Back to sign in
-            </button>
-          )}
         </form>
 
         {status && (
@@ -226,6 +209,10 @@ export default function LoginPage() {
             {status}
           </div>
         )}
+
+        <div className="th-muted" style={{ marginTop: 14, fontSize: 12, lineHeight: 1.35 }}>
+          Note: turn <b>Confirm email</b> OFF in Supabase Auth to avoid email rate limits during MVP.
+        </div>
       </div>
     </main>
   );
