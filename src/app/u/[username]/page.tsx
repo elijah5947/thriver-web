@@ -20,7 +20,7 @@ type Attempt = {
   like_count: number;
   created_at: string;
   challenge_id: string;
-  challenges?: { title: string } | null;
+  challenges?: { title: string }[] | null;
 };
 
 type Challenge = {
@@ -85,7 +85,7 @@ export default function ProfilePage() {
       .order(orderCol, { ascending })
       .limit(60);
 
-    setVideos((v ?? []) as Attempt[]);
+    setVideos((v ?? []) as unknown as Attempt[]);
 
     // challenges (created by this user)
     const orderC = sortChallenges === "recent" ? "created_at" : "hype_count";
@@ -237,7 +237,7 @@ function VideoGrid({ items }: { items: Attempt[] }) {
             </div>
             <div style={{ padding: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div className="th-muted" style={{ fontSize: 12, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {a.challenges?.title ?? "Attempt"}
+                {a.challenges?.[0]?.title ?? "Attempt"}
               </div>
               <div style={{ fontWeight: 900, fontSize: 12 }}>❤️ {a.like_count}</div>
             </div>
