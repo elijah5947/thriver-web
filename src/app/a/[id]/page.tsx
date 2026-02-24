@@ -53,7 +53,7 @@ export default function AttemptPage() {
 
   async function refreshCounts(att: Attempt) {
     // Public likes
-    if (att.challenges?.type === "public") {
+    if (att.challenges?.[0]?.type === "public") {
       const { count } = await supabase
         .from("attempt_likes")
         .select("*", { count: "exact", head: true })
@@ -74,7 +74,7 @@ export default function AttemptPage() {
     }
 
     // Direct completion votes
-    if (att.challenges?.type === "direct") {
+    if (att.challenges?.[0]?.type === "direct") {
       const { count: y } = await supabase
         .from("completion_votes")
         .select("*", { count: "exact", head: true })
