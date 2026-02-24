@@ -23,7 +23,7 @@ type Attempt = {
     ends_at: string | null;
     is_finalized: boolean;
     winner_attempt_id: string | null;
-  } | null;
+  }[];
 };
 
 export default function AttemptPage() {
@@ -129,7 +129,7 @@ export default function AttemptPage() {
       return;
     }
 
-    const att = data as Attempt;
+    const att = data as unknown as Attempt;
     setAttempt(att);
 
     const { data: pub } = supabase.storage.from("videos").getPublicUrl(att.video_path);
@@ -198,7 +198,7 @@ export default function AttemptPage() {
     return <main style={{ padding: 24 }}>{status}</main>;
   }
 
-  const ch = attempt.challenges;
+  const ch = attempt.challenges?.[0] ?? null;
   const isWinner =
     ch?.type === "public" && ch.is_finalized && ch.winner_attempt_id === attempt.id;
 
